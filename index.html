@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>TUMI · Подключение WhatsApp</title>
+  <style>
+    :root{font-family:Arial,sans-serif;color:#202020;background:#f3f1ed}body{margin:0;padding:48px 20px}
+    main{max-width:640px;margin:auto;background:#fff;padding:36px;border-radius:16px;border:1px solid #ddd}
+    .brand{letter-spacing:.22em;font-size:13px;font-weight:bold}h1{font-size:30px;line-height:1.15;margin:28px 0 16px}
+    p,li{line-height:1.6}button{background:#222;color:white;border:0;border-radius:8px;padding:16px 22px;font-size:16px;cursor:pointer}
+    button:disabled{opacity:.5;cursor:wait}#status{margin-top:24px;padding:18px;background:#f4f4f4;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+    small{display:block;margin-top:22px;color:#666}ol{padding-left:22px}.error{color:#a12323}@media(max-width:520px){body{padding:18px 12px}main{padding:24px}h1{font-size:26px}}
+  </style>
+</head>
+<body><main>
+  <div class="brand">TUMI KAZAKHSTAN</div>
+  <h1>WhatsApp на телефоне<br>и в системе</h1>
+  <p>Подключение номера <strong>+7 777 526 1111</strong>. Менеджеры продолжат работать в приложении WhatsApp Business.</p>
+  <ol><li>Выберите подключение существующего аккаунта WhatsApp Business.</li>
+    <li>Подтвердите подключение на телефоне менеджера и разрешите передачу истории.</li>
+    <li>Не закрывайте приложение до завершения синхронизации.</li></ol>
+  <button id="connect" disabled>Загрузка подключения…</button>
+  <div id="status" role="status" aria-live="polite">Ожидаем готовность Facebook.</div>
+  <small>История и контакты сохраняются отдельно. Они не используются в ответах бота или обучении. Номер 5101 не подключается через эту страницу.</small>
+</main>
+<script>
+const APP_ID='1141834241971092', CONFIG_ID='1602661291900261';
+const ENDPOINT='https://ttofgtgkvnocvmgcpksw.supabase.co/functions/v1/whatsapp-onboard';
+const button=document.getElementById('connect'), statusBox=document.getElementById('status');
+let flow=null;
+function show(text,error=false){statusBox.textContent=text;statusBox.classList.toggle('error',error);}
+function facebookOrigin(origin){try{const u=new URL(origin);return u.protocol==='https:'&&(u.hostname==='facebook.com'||u.hostname.endsWith('.facebook.com'));}catch{return false;}}
+function release(){if(flow?.timer)clearTimeout(flow.timer);flow=null;button.disabled=false;button.textContent='Подключить номер';}
+async function submit(){
+ if(!flow||flow.sending||!flow.code||!flow.info?.waba_id)return;
+ const current=flow;current.sending=true;clearTimeout(current.timer);
+ const body={code:current.code,waba_id:current.info.waba_id,phone_number_id:current.info.phone_number_id,
+   business_id:current.info.business_id,event:current.event};
+ current.code=null;
+ show('Подтверждаем подключение и запускаем синхронизацию…');
+ try{
+  const res=await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(110000)});
+  body.code=null;
+  const data=await res.json();
+  if(!res.ok||!data.ok){
+    show('Подключение не завершено. Шаг: '+String(data.step||'неизвестен')+'\nПричина: '+String(data.error||'ошибка')+
+      (data.session_id?'\nСессия: '+data.session_id:'')+'\nНе повторяйте синхронизацию вслепую. Передайте этот результат исполнителю.',true);
+  }else{
+    show('Подключение подтверждено. Синхронизация запрошена.\nПриложение + API: '+(data.is_on_biz_app===true&&data.platform_type==='CLOUD_API'?'да':'требуется проверка')+
+      '\nКонтакты: '+String(data.contacts_sync_request_id||'нет подтверждения')+'\nИстория: '+String(data.history_sync_request_id||'нет подтверждения')+
+      '\nОставьте приложение открытым. Завершение истории проверяется отдельно по входящим данным.');
+  }
+ }catch{body.code=null;show('Не удалось получить подтверждение сервера. Операция могла выполниться. Сначала проверьте сессию; не запускайте подключение повторно.',true);}
+ finally{release();}
+}
+window.addEventListener('message',event=>{
+ if(!flow||flow.sending||!facebookOrigin(event.origin))return;
+ let data;try{data=typeof event.data==='string'?JSON.parse(event.data):event.data;}catch{return;}
+ if(!data||data.type!=='WA_EMBEDDED_SIGNUP')return;
+ if(data.event==='FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'){
+  flow.info=data.data||{};flow.event=data.event;submit();
+ }else if(data.event==='CANCEL'||data.event==='ERROR'){
+  const detail=data.data||{};show((data.event==='CANCEL'?'Подключение отменено':'Ошибка подключения')+
+    (detail.current_step?'\nШаг: '+String(detail.current_step):'')+(detail.error_message?'\n'+String(detail.error_message):''),true);release();
+ }
+});
+window.fbAsyncInit=function(){
+ FB.init({appId:APP_ID,autoLogAppEvents:true,xfbml:true,version:'v25.0'});
+ button.disabled=false;button.textContent='Подключить номер';show('Готово к подключению. Телефон менеджера должен быть под рукой.');
+};
+button.addEventListener('click',()=>{
+ if(flow)return;flow={code:null,info:null,event:null,sending:false,timer:null};button.disabled=true;
+ show('Завершите подключение в окне Facebook.');
+ FB.login(response=>{
+  if(!flow)return;
+  const code=response?.authResponse?.code;
+  if(!code){show('Facebook не выдал код подключения. Проверьте завершение регистрации.',true);release();return;}
+  flow.code=code;
+  // Meta may deliver the session event before or after this callback.
+  flow.timer=setTimeout(()=>{if(flow&&!flow.sending){show('Не получены данные аккаунта. Код не сохранён. Повторите регистрацию после проверки окна Facebook.',true);release();}},20000);
+  submit();
+ },{config_id:CONFIG_ID,response_type:'code',override_default_response_type:true,
+   extras:{setup:{},featureType:'whatsapp_business_app_onboarding',sessionInfoVersion:'3'}});
+});
+const sdk=document.createElement('script');sdk.async=true;sdk.defer=true;sdk.crossOrigin='anonymous';
+sdk.src='https://connect.facebook.net/en_US/sdk.js';sdk.onerror=()=>show('Facebook недоступен. Проверьте соединение и обновите страницу.',true);document.head.appendChild(sdk);
+</script>
+</body></html>
