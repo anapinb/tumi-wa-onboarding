@@ -81,7 +81,7 @@ button.addEventListener('click',()=>{
   flow.timer=setTimeout(()=>{if(flow&&!flow.sending){show('Не получены данные аккаунта. Код не сохранён. Повторите регистрацию после проверки окна Facebook.',true);release();}},20000);
   submit();
  },{config_id:CONFIG_ID,response_type:'code',override_default_response_type:true,
-   extras:{setup:{},featureType:'whatsapp_business_app_onboarding',sessionInfoVersion:'3'}});
+   extras:{setup:{},featureType:'whatsapp_business_app_onboarding',sessionInfoVersion:'3',version:'v4'}});
 });
 const sdk=document.createElement('script');sdk.async=true;sdk.defer=true;sdk.crossOrigin='anonymous';
 sdk.src='https://connect.facebook.net/en_US/sdk.js';sdk.onerror=()=>show('Facebook недоступен. Проверьте соединение и обновите страницу.',true);document.head.appendChild(sdk);
